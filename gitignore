@@ -1,0 +1,33 @@
+# .gitignore
+# This file tells Git which files/folders to IGNORE - meaning they will
+# never be uploaded to GitHub, even though they exist in your project folder.
+
+# --- The database file ---
+# This is the most important line in this file. land_farmer.db will contain
+# real customer names, phone numbers, emails, and ID numbers once you start
+# using the app for real. Database files should never be uploaded to GitHub,
+# even in a private repository - it's just good practice to keep real data
+# out of version control entirely. Anyone who downloads this project will
+# just run database_setup.py themselves to create their own empty database.
+land_farmer.db
+
+# --- Python's own generated files ---
+# Every time you run a Python file, Python creates a "__pycache__" folder
+# full of pre-compiled files to make the next run slightly faster. These
+# are automatically regenerated and never need to be uploaded.
+__pycache__/
+*.pyc
+
+# --- Virtual environment folders ---
+# If you ever create a virtual environment (a "uv venv" or "venv" folder)
+# inside this project folder, it should never be uploaded either - it can
+# be several hundred megabytes, and anyone can recreate it instantly from
+# requirements.txt instead.
+.venv/
+venv/
+
+# --- Operating system files ---
+# Windows and Mac automatically create small hidden files in every folder
+# you browse. These have nothing to do with your project.
+Thumbs.db
+.DS_Store
