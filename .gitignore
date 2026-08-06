@@ -1,0 +1,7 @@
+land_farmer.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+Thumbs.db
+.DS_Store
