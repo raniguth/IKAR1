@@ -13,6 +13,18 @@ import sqlite3  # import the library that lets Python talk to the SQLite databas
 import datetime  # import the library that helps us work with dates and times
 import ikalendar  # import our Ikalendar module, so we can open the availability calendar from this screen
 import build_your_menu  # import our Build Your Menu module, so we can open the menu builder from this screen
+
+# --- Windows display-scaling fix ---
+# On Windows, if a screen is set to a "scaling" setting above 100% (very common
+# on laptops), tkinter can render fonts/widgets larger than the pixel sizes we
+# actually asked for, unless we tell Windows up front that this program will
+# handle its own scaling. Without this, buttons/text can get pushed outside
+# the window even though our code sizes everything correctly.
+import ctypes  # import the library that lets Python talk directly to Windows system settings
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)  # tell Windows "don't auto-scale me, I'll size things myself"
+except Exception:  # this call only exists on Windows - safely do nothing on Mac/Linux
+    pass  # no action needed on other operating systems
 import date_picker  # import our date picker module, for the clickable monthly calendar
 
 # ---------------------------------------------------------------------------

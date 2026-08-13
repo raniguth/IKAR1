@@ -12,6 +12,18 @@ import tkinter as tk  # import the GUI library, nicknamed "tk"
 from tkinter import messagebox  # import the pop-up message box part of tkinter
 import sqlite3  # import the library that lets Python talk to the SQLite database
 
+# --- Windows display-scaling fix ---
+# On Windows, if a screen is set to a "scaling" setting above 100% (very common
+# on laptops), tkinter can render fonts/widgets larger than the pixel sizes we
+# actually asked for, unless we tell Windows up front that this program will
+# handle its own scaling. Without this, buttons/text can get pushed outside
+# the window even though our code sizes everything correctly.
+import ctypes  # import the library that lets Python talk directly to Windows system settings
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)  # tell Windows "don't auto-scale me, I'll size things myself"
+except Exception:  # this call only exists on Windows - safely do nothing on Mac/Linux
+    pass  # no action needed on other operating systems
+
 STATUS_OPTIONS = ["New Inquiry", "Quoted", "Accepted", "Declined"]  # the only 4 allowed values, matching our database CHECK rule
 
 # ---------------------------------------------------------------------------

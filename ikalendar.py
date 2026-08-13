@@ -171,3 +171,5 @@ def open_calendar(parent, allow_past_weeks=False):
     next_button.config(command=go_next_week)  # connect the next-week function to its button
 
     draw_week()  # draw the calendar for the very first time when the window opens
+
+    return draw_week  # hand back draw_week itself, so other code (like a Dashboard Refresh button) can redraw this exact calendar later

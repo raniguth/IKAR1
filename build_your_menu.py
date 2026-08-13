@@ -126,7 +126,9 @@ def open_menu_builder(parent, request_number, on_complete=None):
         tk.Button(button_row, text="Lunch", font=("Arial", 12), width=15, height=2, bg="#2196F3", fg="white",
                   command=lambda: show_step_2("Lunch")).grid(row=0, column=1, padx=15)  # Lunch button
 
-        tk.Button(content_frame, text="Exit the Reservation", command=builder_window.destroy).pack(pady=30)  # lets the client leave at any time
+        tk.Button(content_frame, text="Exit the Reservation", command=builder_window.destroy).pack(pady=(30, 5))  # lets the client leave at any time
+        tk.Button(content_frame, text="Some more details about us",
+                  command=lambda: webbrowser.open("http://ikar-haaretz.com/")).pack(pady=(0, 20))  # opens the restaurant's info website
 
     # -----------------------------------------------------------------
     # STEP 2: choose products within each category's limit
@@ -139,7 +141,7 @@ def open_menu_builder(parent, request_number, on_complete=None):
         tk.Label(content_frame, text=f"Building your {meal_option} menu", font=("Arial", 14, "bold")).pack(pady=10)  # heading
 
         tk.Button(content_frame, text="Show the dishes", font=("Arial", 11, "bold"), bg="#FF9800", fg="white",
-                  command=lambda: webbrowser.open("http://www.ikar-haaretz.com")).pack(pady=(0, 10))  # opens the restaurant's menu website in a browser tab
+                  command=lambda: webbrowser.open("http://ikar-haaretz.com/")).pack(pady=(0, 10))  # opens the restaurant's menu website in a browser tab
 
         # a scrollable area, since there may be many categories/products to show
         canvas = tk.Canvas(content_frame)  # a scrollable drawing surface
@@ -180,6 +182,11 @@ def open_menu_builder(parent, request_number, on_complete=None):
             products = get_products_for_category(cursor, meal_option, category)  # get this category's products
             if not products:  # skip categories that happen to have no products (shouldn't normally occur)
                 continue  # move to the next category
+
+            if category == "No Cat":  # this category is special - it's just an informational notice, not a real selectable option
+                tk.Label(scroll_frame, text="For a special Vegan Menu please contact the restaurant by phone",
+                         font=("Arial", 9, "italic"), fg="#555555", wraplength=380, justify="left").pack(fill="x", padx=15, pady=(8, 25), anchor="w")  # plain notice, no checkbox
+                continue  # skip building any checkbox for this category - move to the next one
 
             limit_text = f"(choose up to {can_choose})" if can_choose is not None else "(no limit)"  # build a readable limit description
             section = tk.LabelFrame(scroll_frame, text=f"{category} {limit_text}", font=("Arial", 10, "bold"))  # a titled box for this category
@@ -262,8 +269,19 @@ def open_menu_builder(parent, request_number, on_complete=None):
             quote_window.destroy()  # close the quote window
             confirmation_window = tk.Toplevel(builder_window)  # a small final window to confirm everything worked
             confirmation_window.title("Confirmed")  # set its title bar text
-            confirmation_window.geometry("300x150")  # set its size
-            tk.Label(confirmation_window, text="Great, see you soon!", font=("Arial", 14, "bold")).pack(pady=30)  # the confirmation message
+            confirmation_window.geometry("380x320")  # set its size (taller now, to fit the longer message)
+            confirmation_message = (
+                "Great, see you soon !\n"
+                "No need to confirm,\n"
+                "All will be ready and waiting for you\n"
+                "According to your request.\n"
+                "We will contact you if needed.\n"
+                "For any more questions or\n"
+                "If you have any changes,\n"
+                "please contact us by phone"
+            )  # the full multi-line confirmation message
+            tk.Label(confirmation_window, text=confirmation_message, font=("Arial", 12, "bold"),
+                     justify="center").pack(pady=30, padx=15)  # the confirmation message, centered
 
             def finish_and_close():
                 # runs whether the client clicks "Close" OR closes the window with the X button -

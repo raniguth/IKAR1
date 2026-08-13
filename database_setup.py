@@ -110,6 +110,27 @@ cursor.execute("""
 # vice versa) - a product is either part of the base meal, or a separate priced add-on, not both
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# TABLE: RequestLinks
+# Each row is one unique, single-use link generated for a potential client.
+# This is the groundwork for the "Create a Link" feature: for now, a
+# companion script checks this table to make sure a link can only ever be
+# used once. Once the app is deployed as a real website, this exact table
+# becomes what a web server would check before showing the request form.
+# ---------------------------------------------------------------------------
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS RequestLinks (
+        link_token TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0,
+        used_at TEXT
+    )
+""")  # run the SQL command to create the RequestLinks table if it does not already exist
+# link_token is a long random piece of text - practically impossible for two links to ever match
+# used starts at 0 (False) and flips to 1 (True) the moment the link is actually opened,
+# so the same link can never be used for a second event request
+
+# ---------------------------------------------------------------------------
 # TABLE 6: Requests
 # Stores every initial inquiry, before it becomes a confirmed event
 # ---------------------------------------------------------------------------

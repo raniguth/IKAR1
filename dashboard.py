@@ -10,7 +10,23 @@ import tkinter as tk  # import the GUI library, nicknamed "tk"
 from tkinter import messagebox  # import the pop-up message box part of tkinter
 import sqlite3  # import the library that lets Python talk to the SQLite database
 import datetime  # import the library that helps us work with dates and times
+import os  # import the library that lets us interact with the operating system (used here to trigger printing)
+import tempfile  # import the library that creates temporary files (used here to build the file we send to the printer)
+import subprocess  # import the library that lets us launch another Python file as its own separate program
+import sys  # import the library that tells us which Python program is currently running us
 import ikalendar  # import our Ikalendar module, so the IKALENDAR button can open it
+
+# --- Windows display-scaling fix ---
+# On Windows, if a screen is set to a "scaling" setting above 100% (very common
+# on laptops), tkinter can render fonts/widgets larger than the pixel sizes we
+# actually asked for, unless we tell Windows up front that this program will
+# handle its own scaling. Without this, buttons/text can get pushed outside
+# the window even though our code sizes everything correctly.
+import ctypes  # import the library that lets Python talk directly to Windows system settings
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)  # tell Windows "don't auto-scale me, I'll size things myself"
+except Exception:  # this call only exists on Windows - safely do nothing on Mac/Linux
+    pass  # no action needed on other operating systems
 
 # matplotlib draws the income chart - it embeds directly inside our tkinter window
 import matplotlib  # import the main plotting library
@@ -157,6 +173,51 @@ def build_weekly_table():
 build_weekly_table()  # draw the table for the first time when the dashboard opens
 
 # ---------------------------------------------------------------------------
+# CREATE A LINK TO A NEW EVENT REQUEST
+# Generates a unique, single-use token for one potential client. For now
+# (while this app runs only on your own computer, not a real website), the
+# "link" shown here is a placeholder - the real, clickable version will only
+# work once the app is deployed as a website. To test the one-link-one-client
+# behavior locally today, use the companion file open_request_by_link.py
+# with the token that gets shown/copied.
+# ---------------------------------------------------------------------------
+
+import secrets  # import the library used to generate a secure, hard-to-guess random token
+
+
+def create_request_link_clicked():
+    token = secrets.token_urlsafe(16)  # generate a long, random, practically-impossible-to-guess piece of text
+    created_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # capture exactly when this link was created
+
+    connection = get_connection()  # open a connection
+    cursor = connection.cursor()  # create a cursor
+    cursor.execute("INSERT INTO RequestLinks (link_token, created_at) VALUES (?, ?)", (token, created_at))  # save the new, unused link
+    connection.commit()  # save it permanently
+    connection.close()  # close the connection
+
+    placeholder_link = f"http://localhost:8000/new-request/{token}"  # this exact address will only work once the app is a real website
+    copy_to_clipboard(placeholder_link)  # copy it to the clipboard, ready to paste into an email/WhatsApp/etc.
+
+    messagebox.showinfo(
+        "Link Created",
+        f"A new, one-time link has been created and copied to your clipboard:\n\n{placeholder_link}\n\n"
+        "IMPORTANT: this exact web address will only work once the app is deployed online. "
+        "For local testing right now, give the client this token instead:\n\n"
+        f"{token}\n\n"
+        "and have them run open_request_by_link.py with it - that will open a fresh "
+        "New Event Request form for them, and this exact token can never be reused afterward."
+    )  # explain clearly what will and won't work yet
+
+
+create_link_button = tk.Button(
+    main_frame,
+    text="Create a Link to a New Event Request",
+    command=create_request_link_clicked,
+    font=("Arial", 11, "bold"), bg="#4CAF50", fg="white", width=32, height=2
+)  # the new button, placed above the icon grid
+create_link_button.pack(pady=(5, 15))  # place it between the weekly table and the icon buttons
+
+# ---------------------------------------------------------------------------
 # NAVIGATION BUTTONS
 # ---------------------------------------------------------------------------
 
@@ -166,8 +227,12 @@ buttons_frame.pack(pady=25)  # place it below the summary table
 BUTTON_STYLE = {"font": ("Arial", 11, "bold"), "width": 14, "height": 2, "bg": "#2196F3", "fg": "white"}  # shared button appearance
 
 
+open_ikalendar_redraw = {"function": None}  # remembers the currently-open Ikalendar's own redraw function, if any is open
+
+
 def open_ikalendar_clicked():
-    ikalendar.open_calendar(window, allow_past_weeks=True)  # open the FULL admin calendar (past weeks allowed)
+    # open_calendar() hands back its own draw_week function - we hold onto it so REFRESH can use it later
+    open_ikalendar_redraw["function"] = ikalendar.open_calendar(window, allow_past_weeks=True)  # open the FULL admin calendar (past weeks allowed)
 
 
 tk.Button(buttons_frame, text="IKALENDAR", command=open_ikalendar_clicked, **BUTTON_STYLE).grid(row=0, column=0, padx=10, pady=10)  # button 1
@@ -181,6 +246,11 @@ tk.Button(buttons_frame, text="FEEDBACK", command=lambda: open_feedback_window()
 def refresh_dashboard_clicked():
     build_weekly_table()  # redraw the weekly summary table with the latest numbers
     build_income_chart()  # redraw the income chart with the latest numbers
+    if open_ikalendar_redraw["function"] is not None:  # if an Ikalendar window has been opened at some point
+        try:
+            open_ikalendar_redraw["function"]()  # try redrawing it with the latest data
+        except tk.TclError:  # this happens if that calendar window has since been closed
+            open_ikalendar_redraw["function"] = None  # forget it, so we don't try again next time
 
 
 REFRESH_STYLE = {"font": ("Arial", 11, "bold"), "width": 14, "height": 2, "bg": "#9C27B0", "fg": "white"}  # a distinct color for these 3 extra buttons
@@ -266,8 +336,40 @@ def show_event_menu_details(event_id):
 
     # this bottom section is packed FIRST with side="bottom", so it reserves its own fixed space
     # at the bottom of the window, no matter how tall the scrollable product list above it grows
+    def print_menu_report():
+        # build a plain-text report of everything shown in this window
+        report_lines = [f"Event #{event_id} - Menu"]  # start with a title line
+        report_lines.append(f"Guests: {num_guests}")  # add the guest count
+        report_lines.append(f"Start Time: {event_start_time}")  # add the start time
+        report_lines.append("")  # a blank line for spacing
+        report_lines.append("Chosen Products:")  # products section heading
+        if product_names:  # if any products were chosen
+            for name in product_names:  # loop through every chosen product
+                report_lines.append(f"- {name}")  # add it as its own line
+        else:  # if nothing was chosen
+            report_lines.append("(none)")  # note that
+        report_lines.append("")  # a blank line for spacing
+        report_lines.append("Important notes for the Chef !")  # chef notes heading
+        report_lines.append(dietary_restrictions if dietary_restrictions else "(none)")  # the actual notes
+        report_text = "\n".join(report_lines)  # join every line together with line breaks between them
+
+        temp_file = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8")  # create a temporary text file
+        temp_file.write(report_text)  # write our report into it
+        temp_file.close()  # close it so other programs (like the printer) can safely open it
+
+        try:
+            os.startfile(temp_file.name, "print")  # ask Windows to send this file to your default printer
+            messagebox.showinfo("Print", "Sent to the printer.")  # confirm success
+        except Exception as error:  # this catches any printing failure (e.g. no printer set up, or not running on Windows)
+            messagebox.showerror("Print Failed", f"Could not print: {error}")  # show what went wrong
+
+    print_frame = tk.Frame(detail_window)  # a frame to hold the print button
+    print_frame.pack(side="bottom", pady=(0, 10))  # place it at the very bottom of the window
+    tk.Button(print_frame, text="PRINT", command=print_menu_report, bg="#2196F3", fg="white",
+              font=("Arial", 10, "bold")).pack()  # the print button
+
     chef_notes_frame = tk.Frame(detail_window)  # a frame to hold the chef notes section
-    chef_notes_frame.pack(side="bottom", fill="x", padx=15, pady=15)  # place it, pinned to the bottom
+    chef_notes_frame.pack(side="bottom", fill="x", padx=15, pady=15)  # place it, pinned to the bottom (just above the print button)
     tk.Label(chef_notes_frame, text="Important notes for the Chef !", font=("Arial", 10, "bold"), fg="#B71C1C").pack(anchor="w", pady=(10, 2))  # heading
     tk.Label(chef_notes_frame, text=dietary_restrictions if dietary_restrictions else "(none)",
              font=("Arial", 10), wraplength=300, justify="left", anchor="w").pack(anchor="w")  # the actual dietary restrictions text
@@ -558,10 +660,20 @@ def open_menu_products_window():
     menu_window.title("Menu Products")  # set its title bar text
     menu_window.geometry("600x500")  # set its size
 
-    tk.Label(menu_window, text="Menu Products (click a row to edit)", font=("Arial", 12, "bold")).pack(pady=10)  # heading
+    tk.Label(menu_window, text="Menu Products (double-click a row to edit)", font=("Arial", 12, "bold")).pack(pady=10)  # heading
 
-    listbox = tk.Listbox(menu_window, width=75, height=20)  # a list box showing one line per product
-    listbox.pack(padx=10, pady=5)  # place it with spacing
+    list_frame = tk.Frame(menu_window)  # a frame to hold the listbox and its scrollbar side by side
+    list_frame.pack(fill="both", expand=True, padx=10, pady=5)  # place it, filling remaining space
+
+    scrollbar10 = tk.Scrollbar(list_frame, orient="vertical")  # a vertical scrollbar, attached directly to the listbox below
+    scrollbar10.pack(side="right", fill="y")  # place the scrollbar along the right edge
+
+    listbox = tk.Listbox(list_frame, width=75, yscrollcommand=scrollbar10.set)  # the listbox - yscrollcommand keeps the scrollbar in sync as it scrolls
+    listbox.pack(side="left", fill="both", expand=True)  # place it, filling the remaining space next to the scrollbar
+
+    scrollbar10.config(command=listbox.yview)  # connect the scrollbar's movement back to actually scrolling the listbox
+    # this two-way connection (yscrollcommand + command) is the standard way to pair any tkinter
+    # listbox with a real scrollbar - the listbox itself already responds to mouse wheel scrolling too
 
     connection = get_connection()  # open a connection
     cursor = connection.cursor()  # create a cursor
@@ -575,14 +687,14 @@ def open_menu_products_window():
         listbox.insert(tk.END, line)  # add it to the listbox
         product_id_map.append(product_id)  # remember this line's real product_id
 
-    def on_row_clicked(clicked_event):
-        selection = listbox.curselection()  # get the index of the clicked line, if any
+    def on_row_double_clicked(clicked_event):
+        selection = listbox.curselection()  # get the index of the double-clicked line, if any
         if not selection:  # if nothing is actually selected
             return  # do nothing
         product_id = product_id_map[selection[0]]  # look up the real product_id for that line
         open_edit_product_window(product_id, menu_window, listbox, product_id_map, selection[0])  # open the edit popup
 
-    listbox.bind("<<ListboxSelect>>", on_row_clicked)  # run on_row_clicked() whenever a line is clicked
+    listbox.bind("<Double-Button-1>", on_row_double_clicked)  # run on_row_double_clicked() whenever a line is DOUBLE-clicked
 
 
 def open_edit_product_window(product_id, menu_window, listbox, product_id_map, list_index):
@@ -594,7 +706,7 @@ def open_edit_product_window(product_id, menu_window, listbox, product_id_map, l
 
     edit_window = tk.Toplevel(menu_window)  # a new pop-up window for editing
     edit_window.title(f"Edit {product_id}")  # set its title bar text
-    edit_window.geometry("350x250")  # set its size
+    edit_window.geometry("350x300")  # set its size
 
     tk.Label(edit_window, text="Product Name:").pack(anchor="w", padx=20, pady=(15, 0))  # label
     name_entry = tk.Entry(edit_window, width=35)  # text box for the product name
@@ -626,7 +738,8 @@ def open_edit_product_window(product_id, menu_window, listbox, product_id_map, l
         listbox.insert(list_index, f"{new_name} - {new_description or '(no description)'}")  # insert the updated line in the same spot
         edit_window.destroy()  # close this edit window
 
-    tk.Button(edit_window, text="Save", command=save_changes, bg="#4CAF50", fg="white").pack(pady=10)  # the save button
+    tk.Button(edit_window, text="Save", command=save_changes, bg="#4CAF50", fg="white",
+              font=("Arial", 13, "bold"), width=15, height=2).pack(pady=15)  # the enlarged save button
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +1010,14 @@ build_income_chart()  # draw the chart for the first time when the dashboard ope
 # ---------------------------------------------------------------------------
 # FOOTER
 # ---------------------------------------------------------------------------
+
+def open_new_request_screen_clicked():
+    subprocess.Popen([sys.executable, "new_request_screen.py"])  # launch the New Event Request form as its own separate program,
+    # so it runs alongside the Dashboard instead of needing its own manually-opened terminal
+
+
+tk.Button(main_frame, text="New Event Request", command=open_new_request_screen_clicked,
+          font=("Arial", 9), bg="#E0E0E0").pack(pady=(5, 5))  # a small button, tucked in near the bottom
 
 tk.Label(main_frame, text="Now, let's get to work !", font=("Arial", 12, "italic")).pack(pady=(10, 30))  # closing message
 
